@@ -42,6 +42,20 @@ const limiter = rateLimit({
 
 app.use("/api/", limiter);
 
+// API Key Authentication Middleware
+app.use("/api/", (req, res, next) => {
+  const apiKey = req.header("X-Api-Key");
+  const validKey = process.env.API_KEY;
+  if (!validKey) {
+    console.warn("⚠️ API_KEY is not set in environment variables.");
+  }
+  if (!apiKey || apiKey !== validKey) {
+    res.status(401).json({ error: "Unauthorized. Invalid or missing X-Api-Key." });
+    return;
+  }
+  next();
+});
+
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
 app.use("/api/v1/claims", claimsRouter);

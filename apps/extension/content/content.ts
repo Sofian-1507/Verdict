@@ -10,7 +10,7 @@
 
 import type { ExtensionMessage, FactCheckResult, ExtensionSettings } from "@verdict/shared-types";
 import { DEFAULT_SETTINGS } from "@verdict/shared-types";
-import { createOverlay, showVerdictCard, showLoadingState, hideLoadingState } from "./overlay.ts";
+import { createOverlay, showVerdictCard, showLoadingState, hideLoadingState, showErrorState } from "./overlay.ts";
 
 // ─── Initialization ────────────────────────────────────────────────────────────
 
@@ -60,6 +60,10 @@ chrome.runtime.onMessage.addListener((message: ExtensionMessage) => {
     case "VERDICT_LOADING_STOP":
       hideLoadingState();
       break;
+    case "VERDICT_ERROR":
+      hideLoadingState();
+      showErrorState(message.payload as string);
+      break;
     case "VERDICT_SHOW_OVERLAY":
       // Toggle overlay visibility
       break;
@@ -71,18 +75,22 @@ chrome.runtime.onMessage.addListener((message: ExtensionMessage) => {
 // ─── YouTube Caption Observer ─────────────────────────────────────────────────
 
 const YOUTUBE_CAPTION_SELECTOR = ".ytp-caption-segment";
-const BUFFER_DELAY_MS = 4000;
+const BUFFER_DELAY_MS = 2000;
 
 let captionBuffer = "";
 let captionTimer: ReturnType<typeof setTimeout> | null = null;
 let lastSentText = "";
+let currentObserver: MutationObserver | null = null;
 
 function isYouTube(): boolean {
   return location.hostname.includes("youtube.com");
 }
 
 function observeYouTubeCaptions() {
-  const observer = new MutationObserver(() => {
+  if (currentObserver) {
+    currentObserver.disconnect();
+  }
+  currentObserver = new MutationObserver(() => {
     // Batch DOM reads using requestAnimationFrame to avoid blocking
     requestAnimationFrame(() => {
       const segments = document.querySelectorAll<HTMLElement>(YOUTUBE_CAPTION_SELECTOR);
@@ -94,17 +102,33 @@ function observeYouTubeCaptions() {
         .trim();
 
       if (!captionText || captionText === lastSentText) return;
-
+      lastSentText = captionText;
       captionBuffer += " " + captionText;
 
       // Debounce: wait for a natural pause in speech
       if (captionTimer) clearTimeout(captionTimer);
       captionTimer = setTimeout(async () => {
-        const textToSend = captionBuffer.trim();
+        // Find sentence boundaries
+        const match = captionBuffer.match(/^(.*?[.!?])\s*(.*)$/);
+        
+        let textToSend = captionBuffer.trim();
+        if (match) {
+          textToSend = match[1].trim();
+          captionBuffer = match[2] || "";
+        } else if (captionBuffer.length > 150) {
+           // Send anyway if buffer gets too large without punctuation
+           captionBuffer = "";
+        } else {
+           // Wait for more text if no punctuation
+           return;
+        }
+
         if (textToSend.length < 30) return;
 
-        lastSentText = captionText;
-        captionBuffer = "";
+        if (!navigator.onLine) {
+          showErrorState("You are offline. Verdict paused.");
+          return;
+        }
 
         await chrome.runtime.sendMessage({
           type: "VERDICT_CHECK_TEXT",
@@ -120,5 +144,14 @@ function observeYouTubeCaptions() {
 
   // Observe the entire player container for caption changes
   const playerContainer = document.querySelector("#movie_player") ?? document.body;
-  observer.observe(playerContainer, { childList: true, subtree: true, characterData: true });
+  currentObserver.observe(playerContainer, { childList: true, subtree: true, characterData: true });
 }
+
+// Handle YouTube SPA Navigation
+window.addEventListener("yt-navigate-finish", () => {
+  captionBuffer = "";
+  lastSentText = "";
+  if (settings.youtubeEnabled && isYouTube()) {
+    observeYouTubeCaptions();
+  }
+});

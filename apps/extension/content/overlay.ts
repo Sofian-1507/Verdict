@@ -191,6 +191,23 @@ const OVERLAY_CSS = `
   @keyframes verdict-spin {
     to { transform: rotate(360deg); }
   }
+
+  /* Error state */
+  .verdict-error {
+    background: rgba(185, 28, 28, 0.9);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 16px;
+    padding: 14px 18px;
+    color: #fca5a5;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+    font-weight: 500;
+    animation: verdict-slide-in 0.2s ease;
+  }
 `;
 
 // ─── Public API ───────────────────────────────────────────────────────────────
@@ -242,6 +259,35 @@ export function showLoadingState(): void {
 /** Remove the loading spinner */
 export function hideLoadingState(): void {
   removeLoadingCard();
+}
+
+/** Show an error state */
+export function showErrorState(message: string): void {
+  if (!container) return;
+  removeLoadingCard();
+  removeErrorCard();
+
+  const card = document.createElement("div");
+  card.className = "verdict-error";
+  card.id = "verdict-error-card";
+  card.setAttribute("role", "alert");
+  card.setAttribute("aria-live", "assertive");
+
+  const icon = document.createElement("span");
+  icon.textContent = "⚠️";
+  
+  const text = document.createTextNode(message);
+
+  card.appendChild(icon);
+  card.appendChild(text);
+  container.prepend(card);
+
+  setTimeout(() => {
+    if (card.isConnected) {
+      card.classList.add("verdict-fade-out");
+      setTimeout(() => card.remove(), 300);
+    }
+  }, 5000);
 }
 
 /** Render a fact-check result card in the overlay */
@@ -321,6 +367,10 @@ export function showVerdictCard(result: FactCheckResult): void {
 
 function removeLoadingCard(): void {
   container?.querySelector("#verdict-loading-card")?.remove();
+}
+
+function removeErrorCard(): void {
+  container?.querySelector("#verdict-error-card")?.remove();
 }
 
 function getVerdictEmoji(verdict: string): string {

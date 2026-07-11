@@ -108,7 +108,8 @@ export type MessageType =
   | "VERDICT_CONTENT_READY"     // Content → Background: content script ready
   | "VERDICT_SHOW_OVERLAY"      // Background → Content: show/hide overlay
   | "VERDICT_LOADING_START"     // Background → Content: show loading state
-  | "VERDICT_LOADING_STOP";     // Background → Content: hide loading state
+  | "VERDICT_LOADING_STOP"      // Background → Content: hide loading state
+  | "VERDICT_ERROR";            // Background → Content: show error state
 
 /** A typed extension message */
 export interface ExtensionMessage {

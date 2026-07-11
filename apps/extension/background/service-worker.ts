@@ -26,7 +26,14 @@ chrome.runtime.onInstalled.addListener(async (details) => {
     await chrome.tabs.create({ url: chrome.runtime.getURL("popup/popup.html") });
   }
 
-  // Context menu: always re-create on install/update (idempotent)
+  setupContextMenu();
+});
+
+chrome.runtime.onStartup.addListener(() => {
+  setupContextMenu();
+});
+
+function setupContextMenu() {
   chrome.contextMenus.removeAll(() => {
     chrome.contextMenus.create({
       id: "verdict-check-selection",
@@ -34,7 +41,7 @@ chrome.runtime.onInstalled.addListener(async (details) => {
       contexts: ["selection"],
     });
   });
-});
+}
 
 // ─── Context Menu Handler ─────────────────────────────────────────────────────
 
@@ -61,6 +68,9 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     }
   } else {
     await sendToContentScript(tab.id, { type: "VERDICT_LOADING_STOP", payload: null });
+    if (!result) {
+      await sendToContentScript(tab.id, { type: "VERDICT_ERROR", payload: "Failed to connect to Verdict API." });
+    }
   }
 });
 
@@ -86,6 +96,9 @@ chrome.runtime.onMessage.addListener((message: ExtensionMessage, sender, sendRes
           }
         } else if (tabId) {
           await sendToContentScript(tabId, { type: "VERDICT_LOADING_STOP", payload: null });
+          if (!result) {
+            await sendToContentScript(tabId, { type: "VERDICT_ERROR", payload: "Failed to connect to Verdict API." });
+          }
         }
         sendResponse({ ok: true });
         break;
@@ -134,22 +147,41 @@ async function runFactCheck(
   settings: ExtensionSettings
 ): Promise<VerifyClaimsResponse | null> {
   const apiUrl = settings.apiUrl ?? DEFAULT_SETTINGS.apiUrl;
+  const apiKey = import.meta.env.VITE_API_KEY || "";
 
+  return fetchWithRetry(`${apiUrl}/api/v1/claims/verify`, {
+    method: "POST",
+    headers: { 
+      "Content-Type": "application/json",
+      "X-Api-Key": apiKey
+    },
+    body: JSON.stringify(req),
+  });
+}
+
+async function fetchWithRetry(url: string, options: RequestInit, retries = 3, delay = 1000): Promise<VerifyClaimsResponse | null> {
   try {
-    const response = await fetch(`${apiUrl}/api/v1/claims/verify`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(req),
-    });
+    const response = await fetch(url, options);
 
-    if (!response.ok) {
-      console.error(`[Verdict] API error: ${response.status} ${response.statusText}`);
-      return null;
+    if (response.ok) {
+      return (await response.json()) as VerifyClaimsResponse;
     }
 
-    return (await response.json()) as VerifyClaimsResponse;
+    if (response.status >= 500 && retries > 0) {
+      console.warn(`[Verdict] API 5xx error, retrying in ${delay}ms...`);
+      await new Promise(r => setTimeout(r, delay));
+      return fetchWithRetry(url, options, retries - 1, delay * 2);
+    }
+
+    console.error(`[Verdict] API error: ${response.status} ${response.statusText}`);
+    return null;
   } catch (err) {
-    console.error("[Verdict] Failed to reach API:", err);
+    if (retries > 0) {
+      console.warn(`[Verdict] Fetch failed, retrying in ${delay}ms...`, err);
+      await new Promise(r => setTimeout(r, delay));
+      return fetchWithRetry(url, options, retries - 1, delay * 2);
+    }
+    console.error("[Verdict] Failed to reach API after retries:", err);
     return null;
   }
 }

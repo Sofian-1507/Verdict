@@ -20,6 +20,11 @@ verdict-monorepo/
 - **Context Menu Integration**: Highlight text on any page and click "Fact Check with Verdict"
 - **Isolated UI Overlay**: Fact-check results appear in a beautiful, non-intrusive, auto-dismissing floating card. Powered by an isolated Shadow DOM to ensure host page CSS doesn't leak.
 - **Chrome Extension Options**: Customize dark/light themes, automatic claim detection (coming soon), and confidence thresholds.
+- **Robust Security & Reliability**:
+  - API Key Authentication protects the backend endpoints.
+  - Zod-powered schema validation and Prompt Injection protections guard against malicious inputs.
+  - Automatic retry logic with exponential backoff handles transient network errors.
+  - Graceful offline state handling and YouTube SPA navigation support.
 - **Smart AI Pipeline**:
   1. *Extraction Stage*: Uses Groq (LLaMA 3.1 8B) to instantly filter out opinions and isolate fact-checkable claims.
   2. *Verification Stage*: Uses Groq (LLaMA 3.3 70B) to perform deep fact-checking, scoring factual deviation, and citing sources.
@@ -49,13 +54,23 @@ cd apps/api
 cp .env.example .env
 ```
 
-Edit `apps/api/.env` and add your Groq API Key:
+Edit `apps/api/.env` and add your Groq API Key and set a custom internal API key for the extension to communicate with the backend:
 
 ```env
 GROQ_API_KEY=your_actual_key_here
+API_KEY=your_secret_api_key_here
 ```
 
-### 3. Start the Backend API
+### 3. Configure the Chrome Extension
+
+Create a `.env` file for the extension to inject the API key at build time:
+
+```bash
+cd apps/extension
+echo "VITE_API_KEY=your_secret_api_key_here" > .env
+```
+
+### 4. Start the Backend API
 
 ```bash
 # Still in apps/api
@@ -64,18 +79,18 @@ pnpm dev
 
 The API will start at `http://localhost:3001`.
 
-### 4. Build the Chrome Extension
+### 5. Build the Chrome Extension
 
 Open a new terminal window and run:
 
 ```bash
-cd apps/extension
+cd ../../apps/extension
 pnpm build
 ```
 
 This will output the compiled extension into `apps/extension/dist`.
 
-### 5. Load into Chrome
+### 6. Load into Chrome
 
 1. Open Chrome and navigate to `chrome://extensions/`
 2. Toggle on **Developer mode** in the top right corner.
