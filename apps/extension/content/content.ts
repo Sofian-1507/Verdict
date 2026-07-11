@@ -10,7 +10,7 @@
 
 import type { ExtensionMessage, FactCheckResult, ExtensionSettings } from "@verdict/shared-types";
 import { DEFAULT_SETTINGS } from "@verdict/shared-types";
-import { createOverlay, showVerdictCard, showLoadingState, hideLoadingState } from "./overlay.js";
+import { createOverlay, showVerdictCard, showLoadingState, hideLoadingState } from "./overlay.ts";
 
 // ─── Initialization ────────────────────────────────────────────────────────────
 
