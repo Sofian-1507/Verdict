@@ -56,10 +56,20 @@ app.use((_req, res) => {
   res.status(404).json({ error: "Route not found." });
 });
 
-// Global error handler
-app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+// Global error handler — preserves HTTP status from known Express errors (e.g. 413, 400)
+app.use((err: Error & { status?: number; type?: string }, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  // Body-parser throws with status 413 and type 'entity.too.large'
+  if (err.status === 413 || err.type === "entity.too.large") {
+    res.status(413).json({ error: "Request body too large. Maximum allowed size is 50 KB." });
+    return;
+  }
+  // Body-parser syntax errors (malformed JSON)
+  if (err.status === 400 && err.type === "entity.parse.failed") {
+    res.status(400).json({ error: "Invalid JSON in request body." });
+    return;
+  }
   console.error("❌ Unhandled error:", err.message);
-  res.status(500).json({
+  res.status(err.status ?? 500).json({
     error: "An internal server error occurred.",
     ...(process.env.NODE_ENV !== "production" && { detail: err.message }),
   });
@@ -70,5 +80,5 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
 app.listen(PORT, () => {
   console.log(`✅ Verdict API running at http://localhost:${PORT}`);
   console.log(`   Environment: ${process.env.NODE_ENV ?? "development"}`);
-  console.log(`   Gemini key: ${process.env.GEMINI_API_KEY ? "✓ loaded" : "✗ MISSING"}`);
+  console.log(`   Groq key:   ${process.env.GROQ_API_KEY ? "✓ loaded" : "✗ MISSING"}`);
 });

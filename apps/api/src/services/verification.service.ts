@@ -1,12 +1,12 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import Groq from "groq-sdk";
 import { v4 as uuidv4 } from "uuid";
 import type { ExtractedClaim, FactCheckResult, VerdictLabel } from "@verdict/shared-types";
 import dotenv from "dotenv";
 dotenv.config();
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const GROQ_API_KEY = process.env.GROQ_API_KEY;
 
-interface RawGeminiResult {
+interface RawGroqResult {
   claim?: string;
   verdict?: VerdictLabel;
   reasoning?: string;
@@ -18,7 +18,7 @@ interface RawGeminiResult {
   factDeviationReasoning?: string;
 }
 
-function normalizeResult(raw: RawGeminiResult, claims: ExtractedClaim[]): FactCheckResult {
+function normalizeResult(raw: RawGroqResult, claims: ExtractedClaim[]): FactCheckResult {
   return {
     id: uuidv4(),
     claim: raw.claim ?? claims.map((c) => c.claim).join(" | "),
@@ -42,33 +42,23 @@ function normalizeResult(raw: RawGeminiResult, claims: ExtractedClaim[]): FactCh
 }
 
 /**
- * Stage 2: Use Gemini Flash to fact-check each extracted claim
+ * Stage 2: Use Groq (llama-3.3-70b-versatile) to fact-check each extracted claim
  * and return structured verdicts with evidence and citations.
  */
 export async function verifyClaims(claims: ExtractedClaim[]): Promise<FactCheckResult[]> {
-  if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is not configured.");
+  if (!GROQ_API_KEY) throw new Error("GROQ_API_KEY is not configured.");
   if (!claims.length) return [];
 
-  const prompt = `You are a rigorous, neutral fact-checking assistant.
+  const systemPrompt = `You are a rigorous, neutral fact-checking assistant.
 
-You will receive a list of fact-checkable claims extracted from text.
-
-For each claim:
+For each claim in the user's JSON array:
 1. Evaluate its factual accuracy against established, verifiable information.
-2. Score how much it deviates from the truth (factDeviationScore).
+2. Score how much it deviates from the truth (factDeviationScore 0.0=accurate, 1.0=false).
 3. Provide the correct factual information.
 4. Cite a credible, real source with a real URL when possible.
 5. Remain strictly neutral and evidence-based. Never editorialize.
 
-Scoring:
-- factDeviationScore 0.0 = completely accurate
-- factDeviationScore 0.5 = misleading or partially incorrect
-- factDeviationScore 1.0 = completely false
-
-CLAIMS:
-${JSON.stringify(claims, null, 2)}
-
-Return ONLY a valid JSON array, no markdown fences:
+Return ONLY a valid JSON array, no markdown fences, no explanation:
 [
   {
     "claim": "exact claim text",
@@ -83,20 +73,29 @@ Return ONLY a valid JSON array, no markdown fences:
   }
 ]`;
 
-  const client = new GoogleGenerativeAI(GEMINI_API_KEY);
-  const model = client.getGenerativeModel({ model: "gemini-2.0-flash" });
+  const client = new Groq({ apiKey: GROQ_API_KEY });
 
-  const res = await model.generateContent(prompt);
-  const rawText = res.response.text().replace(/```json\n?|```/g, "").trim();
+  const completion = await client.chat.completions.create({
+    model: "llama-3.3-70b-versatile",
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: JSON.stringify(claims) },
+    ],
+    temperature: 0.2,
+    max_tokens: 2048,
+  });
+
+  const rawText = (completion.choices[0]?.message?.content ?? "")
+    .replace(/```json\n?|```/g, "")
+    .trim();
 
   try {
-    const parsed: RawGeminiResult | RawGeminiResult[] = JSON.parse(rawText);
+    const parsed: RawGroqResult | RawGroqResult[] = JSON.parse(rawText);
     if (Array.isArray(parsed)) {
       return parsed.map((item) => normalizeResult(item, claims));
     }
     return [normalizeResult(parsed, claims)];
   } catch {
-    // Plain-text fallback — return a single uncertain result
     return [
       normalizeResult(
         {
