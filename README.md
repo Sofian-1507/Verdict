@@ -116,7 +116,7 @@ The extension is designed to read YouTube closed captions and automatically fact
 5. When there is a natural pause (about 4 seconds) and at least 30 characters have been spoken, it sends the text to the AI backend. If a fact-checkable claim is found, a dark glassmorphic **Verdict Card** will slide into the bottom right corner of your screen showing the claim, the fact, and a deviation score.
 
 ### Testing the Manual Context Menu
-You can also manually trigger fact-checks on any text on the page.
+You can also manually trigger fact-checks on any text on the page:
 
 1. Highlight a sentence (e.g., a factual claim in a comment or article).
 2. **Right-click** the highlighted text.
